@@ -4,6 +4,7 @@ from datetime import datetime
 from select import select
 from threading import Thread
 import argparse
+from decouple import config
 
 # This code is adapted from https://github.com/MayankFawkes/Python-Proxy-Server
 
@@ -148,8 +149,6 @@ class ProxyServer:
             conn, client_addr = self.sock.accept()
             s = Thread(target=self.process, args=(conn, client_addr), )
             s.start()
-        # s.join()
-        # self.sock.close()
 
     def __repr__(self):
         return f'<{self.__class__.__name__}.{self.__class__.__module__}' \
@@ -173,7 +172,7 @@ if __name__ == '__main__':
     parser.add_argument("--rhost", "-RH", help="IP of remote server", type=str)
     parser.add_argument("--rport", "-RP", help="PORT of remote server", type=int)
     args = parser.parse_args()
-    kwargs = {"addr": {"host": "0.0.0.0", "port": 30678}, "proxy": {}}
+    kwargs = {"addr": {"host": "0.0.0.0", "port": config('PORT', cast=int)}, "proxy": {}}
     if args.lhost:
         kwargs["addr"]["host"] = args.lhost
     if args.lport:

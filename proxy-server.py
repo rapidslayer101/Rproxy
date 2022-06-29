@@ -29,7 +29,8 @@ class ProxyServer:
         self.debug = debug
         if self.debug:
             self.log(f"[{datetime.now().strftime('%I:%M:%S %p')}] Proxy Server Running on {self.host}:{self.port}")
-        print(f"[{datetime.now().strftime('%I:%M:%S %p')}] Proxy Server Running on {self.host}:{self.port}")
+        print(f"[{datetime.now().strftime('%I:%M:%S %p')}] Proxy Server Running on "
+              f"{socket.gethostbyname(socket.gethostname())}:{self.port}")
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.bind((self.host, self.port))

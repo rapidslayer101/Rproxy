@@ -1,109 +1,57 @@
 import socket
-from sys import exit as sys_exit
 from datetime import datetime
 from select import select
 from threading import Thread
 
 # This code is adapted from https://github.com/MayankFawkes/Python-Proxy-Server
 
+# todo make functional
 
-class ProxyServer:
-    port = 30678
-    host = "0.0.0.0"
-    backlog = 50
-    auth = b"HTTP/1.1 200 Connection Established\r\n\r\n"
-    http_block = b'HTTP/1.1 200 OK\r\nPragma: no-cache\r\nCache-Control: no-cache\r\nContent-Type: text/html\r\n ' \
-                 b'Date: Thu, 30 Jun 2022 13:52:07 GMT\r\nConnection: close\r\n\r\n<html><head><title> HTTP ERROR</' \
-                 b'title></head><body><p style="text-align: center;">&nbsp;</p><p style="text-align: center;">&nbsp;' \
-                 b'</p><p style="text-align: center;">&nbsp;</p><p style="text-align: center;" >&nbsp;</p><p style=' \
-                 b'"text-align: center;">&nbsp;</p><p style="text-align: center;">&nbsp;</p><p style="text-align: ' \
-                 b'center;"><span><strong>**HTTP PAGES HAVE BEEN BLOCKED BY YOUR INTERNAL PROXY CLIENT**</strong>' \
-                 b'</span></p><p style="text-align: center;"><span><strong>**To disable this ' \
-                 b'change settings in RProxy client**</strong></span></p></body></html>'
-    block_response = b''
-    http_requests = ["get", "head", "post", "put", "delete", "connect", "options", "trace", "patch"]
 
-    def __init__(self, proxy: dict = None, debug=False):
-        self.proxy = proxy
-        self.debug = debug
-        if self.debug:
-            self.log(f"[{datetime.now().strftime('%I:%M:%S %p')}] Proxy Server Running on {self.host}:{self.port}")
-        print(f"[{datetime.now().strftime('%I:%M:%S %p')}] Proxy Server Running on "
-              f"{socket.gethostbyname(socket.gethostname())}:{self.port}")
+class Threads:
+    def __init__(self):
+        self.threads_running = 0
+
+    def new_thread(self):
+        self.threads_running += 1
+        return self.threads_running
+
+    def remove_thread(self):
+        self.threads_running -= 1
+
+
+proxy = []
+internal_port = 30677
+backlog = 50
+domain_block = ["googlesyndication.com", "msn.com", "bing.com"]
+auth = b"HTTP/1.1 200 Connection Established\r\n\r\n"
+http_requests = ["get", "head", "post", "put", "delete", "connect", "options", "trace", "patch"]
+
+print(f"[{datetime.now().strftime('%I:%M:%S %p')}] Internal Proxy Running on "
+      f"{socket.gethostbyname(socket.gethostname())}:{internal_port}")
+try:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("0.0.0.0", internal_port))
+    sock.listen(backlog)
+except socket.error as message:
+    print(f"Could not open socket: {message}")
+    exit()
+
+
+def process(conn, client_addr):
+    raw_req = conn.recv(2048)
+    print(raw_req)
+    #print(client_addr)
+    #print(raw_req)
+    if raw_req:
+        #header = requests_header(head=raw_req, client_addr=client_addr)
+        #def requests_header(head: bytes, client_addr: tuple, data: dict = {}):
+        data = {}
         try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.bind((self.host, self.port))
-            self.sock.listen(self.backlog)
-        except socket.error as message:
-            if self.debug:
-                self.log(f"Could not open socket: {message}")
-            print(f"Could not open socket: {message}")
-            sys_exit(1)  # todo test is this is needed
-
-    @staticmethod
-    def printout(type_, request, address):
-        print(address[0], "\t", type_, "\t", b" ".join(request))
-
-    def process(self, conn, client_addr):
-        raw_req = conn.recv(2048)
-        #print(client_addr)
-        #print(raw_req)
-        if raw_req:
-            header = self._requests_header(head=raw_req, client_addr=client_addr)
-            if header["REQUESTS_TYPE"].lower() in ["connect"]:
-                self._action(conn=conn, host=header["domain"], port=header["PORT"], data=raw_req, type_="connect")
-            else:
-                self._action(conn=conn, host=header["domain"], data=raw_req)
-
-    def _action(self, conn: object, host: str, port: int = 80, data: bytes = b"", type_: str = None, timeout=3):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            if self.proxy:
-                s.connect((self.proxy["host"], self.proxy["port"]))
-                s.send(data)
-            else:
-                print(host, port)
-                s.connect((host, port))
-                if not type_:
-                    s.send(data)
-                else:
-                    conn.send(self.auth)
-        except:
-            if self.debug:
-                self.log(f'[{datetime.now().strftime("%I:%M:%S %p")}] Internet is not connected or domain is invalid')
-            print(f'[{datetime.now().strftime("%I:%M:%S %p")}] Internet is not connected or domain is invalid')
-        while True:
-            try:
-                triple = select([conn, s], [], [])[0]
-                if not len(triple):
-                    break
-                if conn in triple:
-                    data = conn.recv(8192)
-                    #print(f'Client data {len(data)} bytes: {data[:50]}')
-                    if not data: break
-                    s.send(data)
-                if s in triple:
-                    data = s.recv(8192)
-                    #print(f'Remote data {len(data)} bytes: {data[:50]}')
-                    if data.startswith(b"HTTP/1.1"):
-                        conn.send(self.http_block)
-                        break
-                    if not data:
-                        break
-                    conn.send(data)
-            except:
-                conn.close()
-                s.close()
-
-    def _requests_header(self, head: bytes, client_addr: tuple, data: dict = {}):
-        try:
-            d = head
-            first = d.split(b'\r\n')[0].split(b' ')
-            schemes = False
-            if first[1].find(b"http://") != -1 or first[1].find(b"http://") != -1:
-                schemes = True
-            if schemes:
-                #self.printout("Request", first, client_addr)
+            first = raw_req.split(b'\r\n')[0].split(b' ')
+            if first[1].find(b"http://") != -1:
+                print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {threads.new_thread()} "
+                  f"Threads -- {client_addr[0]} \t Request \t {first}")
                 data["REQUESTS_TYPE"] = first[0].decode()
                 data["PROTO"], other = first[1].split(b"://")
                 domain_proto = other.split(b"/")[0]
@@ -118,7 +66,8 @@ class ProxyServer:
                 data["PORT"] = PORT
                 return data
             else:
-                #self.printout("Request", first, client_addr)
+                print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {threads.new_thread()} "
+                      f"Threads -- {client_addr[0]} \t Request \t {first}")
                 data["PORT"] = 443
                 data["REQUESTS_TYPE"] = first[0].decode()
                 domain_proto = first[1].split(b"/")[0]
@@ -133,32 +82,64 @@ class ProxyServer:
                 data["domain"] = domain.decode()
                 if PORT:
                     data["PORT"] = int(PORT.decode())
-                return data
+                header = data
+                # print(data)
         except:
-            self.printout("Error", first, client_addr)
-            #print(head)
+            print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {threads.new_thread()} "
+                  f"Threads -- {client_addr[0]} \t Error \t {b' '.join(first)}")
+            # print(head)
+        if header["REQUESTS_TYPE"].lower() in ["connect"]:
+            _action(conn=conn, d_host=header["domain"], d_port=header["PORT"], data=raw_req, type_="connect")
+        else:
+            _action(conn=conn, d_host=header["domain"], d_port=raw_req)
+    else:
+        print("No Raw Request")
 
-    def start(self):
-        while True:
-            conn, client_addr = self.sock.accept()
-            s = Thread(target=self.process, args=(conn, client_addr), )
-            s.start()
 
-    def __repr__(self):
-        return f'<{self.__class__.__name__}.{self.__class__.__module__}' \
-               f' host={self.host}, port={self.port} at {hex(id(self))}>'
-
-    def __str__(self):
-        return f'<{self.__class__.__name__}.{self.__class__.__module__}' \
-               f' host={self.host}, port={self.port} at {hex(id(self))}>'
-
-    @staticmethod
-    def log(msg):
-        with open("ProxyServer.logs", "a") as file:
-            file.write(f'{msg}\n')
-            file.close()
+def _action(conn, client_addr):
+    data = conn.recv(2048)
+    destination = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        if proxy:
+            destination.connect((proxy[0], proxy[1]))
+            destination.send(data)
+        else:
+            destination.connect((d_host, d_port))
+            if not type_:
+                destination.send(data)
+            else:
+                conn.send(auth)
+    except:
+        print(f'[{datetime.now().strftime("%I:%M:%S %p")}] Internet is not connected or domain invalid')
+    while True:
+        try:
+            triple = select([conn, destination], [], [])[0]
+            if not len(triple):
+                print("break")
+                break
+            if conn in triple:
+                data = conn.recv(8192)
+                #print(f'Client data {len(data)} bytes: {data[:50]}')
+                if not data:
+                    break
+                destination.send(data)
+            else:
+                if destination in triple:
+                    data = destination.recv(8192)
+                    #print(f'Remote data {len(data)} bytes: {data[:50]}')
+                    if not data:
+                        break
+                    conn.send(data)
+                else:
+                    break
+        except Exception as e:
+            print(f"Error: {e}")
+    conn.close()
+    destination.close()
+    threads.remove_thread()
 
 
 if __name__ == '__main__':
-    kwargs = {"proxy": {}}
-    ProxyServer(**kwargs, debug=False).start()
+    threads = Threads()
+    while True:
+        s = Thread(target=_action(), args=(sock.accept()), ).start()

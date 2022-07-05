@@ -1,1 +1,0 @@
-worker: python proxy-server.py

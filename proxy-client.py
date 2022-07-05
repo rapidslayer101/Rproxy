@@ -6,52 +6,11 @@ from threading import Thread
 # This code is adapted from https://github.com/MayankFawkes/Python-Proxy-Server
 
 
-def requests_header(head: bytes, client_addr: tuple, data: dict = {}):
-    try:
-        d = head
-        first = d.split(b'\r\n')[0].split(b' ')
-        if first[1].find(b"http://") != -1:
-            print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {client_addr[0]} \t Request \t {first}")
-            data["REQUESTS_TYPE"] = first[0].decode()
-            data["PROTO"], other = first[1].split(b"://")
-            domain_proto = other.split(b"/")[0]
-            data["LOC_PARAMS"] = "/" + b"/".join(other.split(b"/")[1:]).decode()
-            if domain_proto.find(b":") != -1:
-                domain = domain_proto.split(b":")[0].decode()
-                PORT = domain_proto.split(b":")[1].decode()
-            else:
-                domain = domain_proto.decode()
-                PORT = 80
-            data["domain"] = domain
-            data["PORT"] = PORT
-            return data
-        else:
-            print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {client_addr[0]} \t Request \t {first}")
-            data["PORT"] = 443
-            data["REQUESTS_TYPE"] = first[0].decode()
-            domain_proto = first[1].split(b"/")[0]
-            data["domain"] = domain_proto.decode()
-            data["LOC_PARAMS"] = "/" + b"/".join(first[1].split(b"/")[1:]).decode()
-            if domain_proto.find(b":") != -1:
-                domain = domain_proto.split(b":")[0]
-                PORT = domain_proto.split(b":")[1]
-            else:
-                domain = domain_proto
-                PORT = 80
-            data["domain"] = domain.decode()
-            if PORT:
-                data["PORT"] = int(PORT.decode())
-            return data
-    except:
-        print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {client_addr[0]} \t Error \t {b' '.join(first)}")
-        #print(head)
-
-
 class ProxyServer:
     port = 30678
     host = "0.0.0.0"
     backlog = 50
-    domain_block = ["googlesyndication.com", "msn.com"]
+    domain_block = ["googlesyndication.com", "msn.com", "bing.com"]
     auth = b"HTTP/1.1 200 Connection Established\r\n\r\n"
     http_block = b'HTTP/1.1 200 OK\r\nPragma: no-cache\r\nCache-Control: no-cache\r\nContent-Type: text/html\r\n ' \
                  b'Connection: close\r\n\r\n<html><head><title> HTTP ERROR</' \
@@ -81,7 +40,47 @@ class ProxyServer:
         #print(client_addr)
         #print(raw_req)
         if raw_req:
-            header = requests_header(head=raw_req, client_addr=client_addr)
+            #header = requests_header(head=raw_req, client_addr=client_addr)
+            #def requests_header(head: bytes, client_addr: tuple, data: dict = {}):
+            data = {}
+            try:
+                first = raw_req.split(b'\r\n')[0].split(b' ')
+                if first[1].find(b"http://") != -1:
+                    print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {client_addr[0]} \t Request \t {first}")
+                    data["REQUESTS_TYPE"] = first[0].decode()
+                    data["PROTO"], other = first[1].split(b"://")
+                    domain_proto = other.split(b"/")[0]
+                    data["LOC_PARAMS"] = "/" + b"/".join(other.split(b"/")[1:]).decode()
+                    if domain_proto.find(b":") != -1:
+                        domain = domain_proto.split(b":")[0].decode()
+                        PORT = domain_proto.split(b":")[1].decode()
+                    else:
+                        domain = domain_proto.decode()
+                        PORT = 80
+                    data["domain"] = domain
+                    data["PORT"] = PORT
+                    return data
+                else:
+                    print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {client_addr[0]} \t Request \t {first}")
+                    data["PORT"] = 443
+                    data["REQUESTS_TYPE"] = first[0].decode()
+                    domain_proto = first[1].split(b"/")[0]
+                    data["domain"] = domain_proto.decode()
+                    data["LOC_PARAMS"] = "/" + b"/".join(first[1].split(b"/")[1:]).decode()
+                    if domain_proto.find(b":") != -1:
+                        domain = domain_proto.split(b":")[0]
+                        PORT = domain_proto.split(b":")[1]
+                    else:
+                        domain = domain_proto
+                        PORT = 80
+                    data["domain"] = domain.decode()
+                    if PORT:
+                        data["PORT"] = int(PORT.decode())
+                    header = data
+                    # print(data)
+            except:
+                print(f"[{datetime.now().strftime('%I:%M:%S %p')}] {client_addr[0]} \t Error \t {b' '.join(first)}")
+                # print(head)
             if ".".join(header["domain"].split(".")[-2:]) not in self.domain_block:
                 if header["REQUESTS_TYPE"].lower() in ["connect"]:
                     self._action(conn=conn, host=header["domain"], port=header["PORT"], data=raw_req, type_="connect")
@@ -91,6 +90,8 @@ class ProxyServer:
                 print(f"Blocked {header['domain']}")
                 conn.send(self.block_response)
                 conn.close()
+        else:
+            print("No Raw Request")
 
     def _action(self, conn: object, host: str, port: int = 80, data: bytes = b"", type_: str = None):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

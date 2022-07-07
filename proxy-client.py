@@ -20,6 +20,7 @@ class Threads:
 
 proxy = []  # the address of the external proxy server
 #proxy = ["127.0.0.1", 30677]
+#proxy = ["192.168.1.231", 30677]
 local_port = 30678
 max_req = 50
 domain_blocks = ["googlesyndication.com", "msn.com", "bing.com"]
@@ -97,40 +98,74 @@ def process_req(local_connection, client_addr):
     if connect:
         destination = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            if proxy:
-                destination.connect((proxy[0], proxy[1]))
+            if proxy:  # todo make proxy work
+                proxy_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                proxy_sock.connect((proxy[0], proxy[1]))
                 req_send = f"{raw_req}🱫{connect}🱫{header['domain']}🱫{header['PORT']}"
-                destination.send(req_send.encode())
+                proxy_sock.send(req_send.encode())
+                if connect == 1:
+                    destination.send(raw_req)
+                else:
+                    local_connection.send(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                while True:
+                    try:
+                        triple = proxy_sock.recv(8192).decode()
+                        print("SOCK", triple)
+                        if not len(triple):
+                            break
+                        if triple == "LOCAL":
+                            client_data = local_connection.recv(8192)
+                            print("Got cli data")
+                            if not client_data:
+                                break
+                            proxy_sock.send(client_data)
+                        else:
+                            if triple == "DESTIN":
+                                remote_data = proxy_sock.recv(8192)
+                                print("Got rem data")
+                                if remote_data.startswith(b"HTTP/1.1"):
+                                    local_connection.send(http_block)
+                                    break
+                                if not remote_data:
+                                    break
+                                local_connection.send(remote_data)
+                            else:
+                                print("BROKE")
+                                break
+                    except Exception as e:
+                        print(f"Error: {e}")
+                        break
             else:
+                destination = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 destination.connect((header["domain"], header["PORT"]))
                 if connect == 1:
                     destination.send(raw_req)
                 else:
                     local_connection.send(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-            while True:
-                try:
-                    triple = select([local_connection, destination], [], [])[0]
-                    if not len(triple):
-                        break
-                    if local_connection in triple:
-                        client_data = local_connection.recv(8192)
-                        if not client_data:
+                while True:
+                    try:
+                        triple = select([local_connection, destination], [], [])[0]
+                        if not len(triple):
                             break
-                        destination.send(client_data)
-                    else:
-                        if destination in triple:
-                            remote_data = destination.recv(8192)
-                            if remote_data.startswith(b"HTTP/1.1"):
-                                local_connection.send(http_block)
+                        if local_connection in triple:
+                            client_data = local_connection.recv(8192)
+                            if not client_data:
                                 break
-                            if not remote_data:
-                                break
-                            local_connection.send(remote_data)
+                            destination.send(client_data)
                         else:
-                            break
-                except Exception as e:
-                    print(f"Error: {e}")
-                    break
+                            if destination in triple:
+                                remote_data = destination.recv(8192)
+                                if remote_data.startswith(b"HTTP/1.1"):
+                                    local_connection.send(http_block)
+                                    break
+                                if not remote_data:
+                                    break
+                                local_connection.send(remote_data)
+                            else:
+                                break
+                    except Exception as e:
+                        print(f"Error: {e}")
+                        break
         except:
             print(f'[{datetime.now().strftime("%I:%M:%S %p")}] Internet is not connected or domain invalid')
         destination.close()
@@ -141,4 +176,4 @@ def process_req(local_connection, client_addr):
 if __name__ == '__main__':
     threads = Threads()
     while True:
-        s = Thread(target=process_req, args=(internal_proxy.accept()), ).start()
+        Thread(target=process_req, args=(internal_proxy.accept()), ).start()

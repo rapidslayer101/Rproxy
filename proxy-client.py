@@ -19,7 +19,7 @@ class Threads:
 
 
 proxy = []  # the address of the external proxy server
-#proxy = ["127.0.0.1", 30677]
+proxy = ["127.0.0.1", 30677]
 #proxy = ["192.168.1.231", 30677]
 local_port = 30678
 max_req = 50
@@ -38,9 +38,9 @@ http_requests = ["get", "head", "post", "put", "delete", "connect", "options", "
 print(f"[{datetime.now().strftime('%I:%M:%S %p')}] Internal Proxy Running on "
       f"{socket.gethostbyname(socket.gethostname())}:{local_port}")
 try:
-    internal_proxy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    internal_proxy.bind(("0.0.0.0", local_port))
-    internal_proxy.listen(max_req)
+    internal_firewall = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    internal_firewall.bind(("0.0.0.0", local_port))
+    internal_firewall.listen(max_req)
 except socket.error as socket_error:
     print(f"Could not open socket: {socket_error}")
     exit()
@@ -96,33 +96,50 @@ def process_req(local_connection, client_addr):
         print("No Raw Request")
 
     if connect:
-        destination = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            if proxy:  # todo make proxy work
+            if proxy:
                 proxy_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 proxy_sock.connect((proxy[0], proxy[1]))
-                req_send = f"{raw_req}🱫{connect}🱫{header['domain']}🱫{header['PORT']}"
-                proxy_sock.send(req_send.encode())
                 if connect == 1:
-                    destination.send(raw_req)
+                    req_send = f"1{raw_req}🱫{header['domain']}🱫{header['PORT']}"
+                    proxy_sock.send(req_send.encode())
                 else:
+                    req_send = f"{header['domain']}🱫{header['PORT']}"
+                    proxy_sock.send(req_send.encode())
                     local_connection.send(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 while True:
                     try:
-                        triple = proxy_sock.recv(8192).decode()
-                        print("SOCK", triple)
-                        if not len(triple):
-                            break
-                        if triple == "LOCAL":
+                        # todo proxy error for detecting which direction to send
+                        # todo suggested fix by checking local_connection and destination connection
+                        # then send the not null response
+                        r_local_sock = select([local_connection], [], [])[0]
+                        if not len(r_local_sock):
+                            print("QUIT SOCKS LOOP -L")
+                            proxy_sock.send(b"")
+                        if local_connection in r_local_sock:
+                            print("LOCAL RSOCK -S")
+                            proxy_sock.send(b"LOCAL")
+                        else:
+                            print("LOCAL RSOCK -R")
+                            proxy_sock.send(b"DESTIN")
+                        r_destin_sock = proxy_sock.recv(8192)
+                        if r_destin_sock == b"":
+                            print("QUIT SOCKS LOOP -D")
+                        if r_destin_sock == b"LOCAL":
+                            print("LOCAL TRIP1")
+                            print(r_local_sock, "LOCAL")
+                            input()
                             client_data = local_connection.recv(8192)
-                            print("Got cli data")
                             if not client_data:
                                 break
                             proxy_sock.send(client_data)
                         else:
-                            if triple == "DESTIN":
+                            if r_destin_sock == b"DESTIN":
+                                print("DESTIN TRIP1")
+                                print(r_local_sock, "DESTIN")
+                                input()
+                                proxy_sock.send(b"DESTIN")
                                 remote_data = proxy_sock.recv(8192)
-                                print("Got rem data")
                                 if remote_data.startswith(b"HTTP/1.1"):
                                     local_connection.send(http_block)
                                     break
@@ -144,16 +161,18 @@ def process_req(local_connection, client_addr):
                     local_connection.send(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 while True:
                     try:
-                        triple = select([local_connection, destination], [], [])[0]
-                        if not len(triple):
+                        read_socket = select([local_connection, destination], [], [])[0]
+                        if not len(read_socket):
                             break
-                        if local_connection in triple:
+                        if local_connection in read_socket:
+                            print("INT LOCAL")
                             client_data = local_connection.recv(8192)
                             if not client_data:
                                 break
                             destination.send(client_data)
                         else:
-                            if destination in triple:
+                            if destination in read_socket:
+                                print("INT DESTIN")
                                 remote_data = destination.recv(8192)
                                 if remote_data.startswith(b"HTTP/1.1"):
                                     local_connection.send(http_block)
@@ -168,6 +187,9 @@ def process_req(local_connection, client_addr):
                         break
         except:
             print(f'[{datetime.now().strftime("%I:%M:%S %p")}] Internet is not connected or domain invalid')
+    if proxy:
+        proxy_sock.close()
+    else:
         destination.close()
     local_connection.close()
     threads.remove_thread()
@@ -176,4 +198,4 @@ def process_req(local_connection, client_addr):
 if __name__ == '__main__':
     threads = Threads()
     while True:
-        Thread(target=process_req, args=(internal_proxy.accept()), ).start()
+        Thread(target=process_req, args=(internal_firewall.accept()), ).start()

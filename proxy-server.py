@@ -3,8 +3,6 @@ from datetime import datetime
 from select import select
 from threading import Thread
 
-# todo make function
-
 
 class Threads:
     def __init__(self):
@@ -18,7 +16,6 @@ class Threads:
         self.threads_running -= 1
 
 
-proxy = []  # the address of the external proxy server
 local_port = 30677
 max_req = 50
 domain_blocks = ["googlesyndication.com", "msn.com", "bing.com"]
@@ -37,37 +34,49 @@ except socket.error as socket_error:
 
 
 def process_req(client, client_addr):
-    raw_req, connect, host, port = client.recv(8192).decode().split("🱫")
+    req_data = client.recv(8192).decode()
+    if req_data.startswith("1"):
+        raw_req, host, port = req_data[1:].split("🱫")
+    else:
+        host, port = req_data.split("🱫")
     print(host, port)
     destination = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         destination.connect((host, int(port)))
-        if int(connect) == 1:
+        if req_data.startswith("1"):
             destination.send(raw_req)
         while True:
             try:
-                triple = select([client, destination], [], [])[0]
-                if not len(triple):
-                    print("BROKE")
+                # todo proxy error for detecting which direction to send
+                r_client_sock = client.recv(8192)
+                if r_client_sock == b"":
                     break
-                if client in triple:
+                r_destin_sock = select([destination], [], [])[0]
+                if not len(r_destin_sock):
+                    client.send(b"")
+                if destination in r_destin_sock:
                     print("DIR1 LOCAL")
                     client.send(b"LOCAL")
+                    print(r_client_sock, "LOCAL")
+                    input()
                     client_data = client.recv(8192)
-                    if not client_data:
-                        break
                     destination.send(client_data)
+                    if not client_data:
+                        print("BROKE")
+                        break
                 else:
-                    if destination in triple:
-                        print("DIR1 DESTIN")
-                        client.send(b"DESTIN")
+                    print("DIR1 DESTIN")
+                    client.send(b"DESTIN")
+                    print(r_client_sock, "DESTIN")
+                    input()
+                    if destination.recv(8192) == b"DESTIN":
+                    #input()
                         remote_data = destination.recv(8192)
                         if not remote_data:
+                            print("BROKE")
                             break
-                        print(remote_data)
                         client.send(remote_data)
                     else:
-                        print("BROKE")
                         break
             except Exception as e:
                 print(f"Error: {e}")
